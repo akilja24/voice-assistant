@@ -1,7 +1,6 @@
 fastapi==0.109.0
 uvicorn[standard]==0.27.0
 python-multipart==0.0.6
-faster-whisper==0.10.0
-numpy==1.24.3
-torch==2.1.2
-torchaudio==2.1.2
+faster-whisper==1.0.3
+nvidia-ml-py==12.535.161
+numpy==1.26.3

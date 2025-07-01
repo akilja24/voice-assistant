@@ -2,7 +2,7 @@ services:
   orchestrator:
     build: ./orchestrator
     ports:
-      - "8000:8000"
+      - "8080:8000"
     environment:
       - WHISPER_SERVICE_URL=http://whisper-service:8001
       - TTS_SERVICE_URL=http://tts-service:8003
@@ -22,10 +22,19 @@ services:
     ports:
       - "8001:8001"
     environment:
-      - WHISPER_MODEL=${WHISPER_MODEL:-tiny.en}
+      - WHISPER_MODEL=${WHISPER_MODEL:-base}
       - DEVICE=cuda
+      - DEVICE_INDEX=0
       - COMPUTE_TYPE=float16
+      - BEAM_SIZE=5
+      - TEMPERATURE=0.0
+      - VAD_FILTER=true
+      - VAD_THRESHOLD=0.5
+      - MIN_SILENCE_DURATION_MS=500
+      - MODEL_CACHE_DIR=/app/models
       - SHARED_SECRET=${SHARED_SECRET:-}
+    volumes:
+      - whisper-models:/app/models
     deploy:
       resources:
         reservations:
@@ -50,3 +59,7 @@ services:
 networks:
   voice-assistant-network:
     driver: bridge
+
+volumes:
+  whisper-models:
+    driver: local

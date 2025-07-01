@@ -9,6 +9,7 @@ from typing import Optional
 import httpx
 import asyncio
 import aiofiles
+import io
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -37,30 +38,26 @@ def verify_auth(authorization: Optional[str] = Header(None)):
 
 @app.on_event("startup")
 async def startup_event():
-    """Download default Piper model on startup if not exists"""
+    """Verify Piper is installed and model is available"""
     if TTS_ENGINE == "piper":
+        # Check if piper binary is available
+        try:
+            result = subprocess.run(["piper", "--version"], capture_output=True, text=True)
+            logger.info(f"Piper version: {result.stdout.strip()}")
+        except FileNotFoundError:
+            logger.error("Piper binary not found in PATH")
+            raise RuntimeError("Piper TTS binary not installed")
+        
+        # Check if default model exists
         model_file = f"{PIPER_MODEL_PATH}/{TTS_VOICE}.onnx"
-        if not os.path.exists(model_file):
-            logger.info(f"Downloading Piper model: {TTS_VOICE}")
-            try:
-                # Download model using wget
-                model_url = f"https://huggingface.co/rhasspy/piper-voices/resolve/main/{TTS_VOICE.replace('-', '/')}/{TTS_VOICE}.onnx"
-                config_url = f"https://huggingface.co/rhasspy/piper-voices/resolve/main/{TTS_VOICE.replace('-', '/')}/{TTS_VOICE}.onnx.json"
-                
-                os.makedirs(PIPER_MODEL_PATH, exist_ok=True)
-                
-                subprocess.run([
-                    "wget", "-q", "-O", model_file, model_url
-                ], check=True)
-                
-                subprocess.run([
-                    "wget", "-q", "-O", f"{model_file}.json", config_url
-                ], check=True)
-                
-                logger.info(f"Model downloaded successfully: {TTS_VOICE}")
-            except Exception as e:
-                logger.error(f"Failed to download model: {e}")
-                # Continue anyway, will fail on first request
+        if os.path.exists(model_file):
+            logger.info(f"Default voice model available: {TTS_VOICE}")
+            # Get model file size for debugging
+            size_mb = os.path.getsize(model_file) / (1024 * 1024)
+            logger.info(f"Model size: {size_mb:.1f} MB")
+        else:
+            logger.warning(f"Default voice model not found: {model_file}")
+            logger.info(f"Available models: {os.listdir(PIPER_MODEL_PATH) if os.path.exists(PIPER_MODEL_PATH) else []}")
 
 
 @app.get("/health")
@@ -69,27 +66,37 @@ async def health_check():
     return {"status": "healthy", "engine": TTS_ENGINE}
 
 
-async def generate_speech_piper(text: str, voice: str) -> bytes:
-    """Generate speech using Piper TTS"""
+async def generate_speech_piper(text: str, voice: str, speed: float = 1.0) -> bytes:
+    """Generate speech using Piper TTS with optimized settings"""
     model_path = f"{PIPER_MODEL_PATH}/{voice}.onnx"
     
     if not os.path.exists(model_path):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Voice model not found: {voice}"
-        )
+        # Try alternative path structure
+        alt_model_path = f"{PIPER_MODEL_PATH}/{voice.replace('_', '/')}/{voice}.onnx"
+        if os.path.exists(alt_model_path):
+            model_path = alt_model_path
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Voice model not found: {voice}"
+            )
     
     # Create temporary file for output
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
         tmp_file_path = tmp_file.name
     
     try:
-        # Run Piper
+        # Run Piper with optimized settings
         cmd = [
             "piper",
             "--model", model_path,
-            "--output_file", tmp_file_path
+            "--output_file", tmp_file_path,
+            "--length_scale", str(1.0 / speed),  # Adjust speed
+            "--sentence_silence", "0.2"  # Add natural pauses
         ]
+        
+        # Log the command for debugging
+        logger.debug(f"Running Piper command: {' '.join(cmd)}")
         
         process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -98,21 +105,32 @@ async def generate_speech_piper(text: str, voice: str) -> bytes:
             stderr=asyncio.subprocess.PIPE
         )
         
-        stdout, stderr = await process.communicate(input=text.encode())
+        # Start timing
+        start_time = asyncio.get_event_loop().time()
+        
+        stdout, stderr = await process.communicate(input=text.encode('utf-8'))
+        
+        # Log generation time
+        generation_time = asyncio.get_event_loop().time() - start_time
+        logger.info(f"Speech generated in {generation_time:.2f}s for {len(text)} characters")
         
         if process.returncode != 0:
             logger.error(f"Piper error: {stderr.decode()}")
             raise HTTPException(
                 status_code=500,
-                detail="Failed to generate speech"
+                detail=f"Failed to generate speech: {stderr.decode()}"
             )
         
         # Read the generated audio
         async with aiofiles.open(tmp_file_path, 'rb') as f:
             audio_data = await f.read()
         
+        logger.info(f"Generated audio size: {len(audio_data) / 1024:.1f} KB")
         return audio_data
         
+    except Exception as e:
+        logger.error(f"Error in generate_speech_piper: {str(e)}")
+        raise
     finally:
         # Clean up
         if os.path.exists(tmp_file_path):
@@ -144,7 +162,7 @@ async def text_to_speech(
         logger.info(f"Generating speech for text: {request.text[:100]}...")
         
         if TTS_ENGINE == "piper":
-            audio_data = await generate_speech_piper(request.text, voice)
+            audio_data = await generate_speech_piper(request.text, voice, request.speed)
         elif TTS_ENGINE == "polly":
             audio_data = await generate_speech_polly(request.text, voice)
         else:

@@ -6,6 +6,9 @@ ENV PYTHONUNBUFFERED=1
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     wget \
+    curl \
+    libgomp1 \
+    libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -14,20 +17,40 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Download Piper binary
-RUN wget -q https://github.com/rhasspy/piper/releases/download/v1.2.0/piper_amd64.tar.gz && \
-    tar -xzf piper_amd64.tar.gz && \
-    mv piper /usr/local/bin/ && \
-    rm piper_amd64.tar.gz
+# Create directory for models with proper permissions
+RUN mkdir -p /app/models && chmod 755 /app/models
 
-# Create directory for models
-RUN mkdir -p /app/models
+# Download and install Piper binary
+RUN cd /tmp && \
+    wget https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz && \
+    tar -xzvf piper_linux_x86_64.tar.gz && \
+    cd piper && \
+    chmod +x piper && \
+    mv piper /usr/local/bin/ && \
+    mv *.so* /usr/local/lib/ && \
+    mv espeak-ng-data /usr/share/ && \
+    ldconfig && \
+    cd /tmp && \
+    rm -rf piper piper_linux_x86_64.tar.gz && \
+    # Test that piper is accessible
+    /usr/local/bin/piper --help
 
 # Copy application code
 COPY app/ ./app/
 
-# Create non-root user
-RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+# Create non-root user and ensure proper permissions
+RUN useradd -m -u 1000 appuser && \
+    chown -R appuser:appuser /app && \
+    chmod -R 755 /app/models
+
+# Pre-download the default voice model as root to avoid permission issues
+RUN mkdir -p /app/models/en_US/amy/medium && \
+    wget -q -O /app/models/en_US-amy-medium.onnx \
+    "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/amy/medium/en_US-amy-medium.onnx" && \
+    wget -q -O /app/models/en_US-amy-medium.onnx.json \
+    "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/amy/medium/en_US-amy-medium.onnx.json" && \
+    chown -R appuser:appuser /app/models
+
 USER appuser
 
 # Expose port

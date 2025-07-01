@@ -85,7 +85,7 @@ async def test_audio_files():
         "tests/audio_samples/Noisy-Short_16k.wav"
     ]
     
-    uri = "ws://localhost:8000/ws/interact"
+    uri = "ws://localhost:8080/ws"
     print(f"Connecting to {uri}")
     
     for idx, audio_file in enumerate(audio_files):
@@ -125,7 +125,7 @@ async def test_single_file(file_path):
     """
     Test with a single audio file
     """
-    uri = "ws://localhost:8000/ws/interact"
+    uri = "ws://localhost:8080/ws"
     
     async with websockets.connect(uri) as websocket:
         response_audio, metadata = await send_audio_file(websocket, file_path)
