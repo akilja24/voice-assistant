@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+    
+    - name: Build services
+      run: docker compose build
+    
+    - name: Start services
+      run: |
+        docker compose up -d
+        sleep 30  # Wait for services to fully start
+    
+    - name: Test orchestrator health
+      run: |
+        curl -f http://localhost:8000/health || exit 1
+        echo "Orchestrator health check passed"
+    
+    - name: Test whisper-service health
+      run: |
+        curl -f http://localhost:8001/health || exit 1
+        echo "Whisper service health check passed"
+    
+    - name: Test tts-service health
+      run: |
+        curl -f http://localhost:8003/health || exit 1
+        echo "TTS service health check passed"
+    
+    - name: View logs on failure
+      if: failure()
+      run: docker compose logs
+    
+    - name: Stop services
+      if: always()
+      run: docker compose down
+
+  lint:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+    
+    - name: Install pre-commit
+      run: pip install pre-commit
+    
+    - name: Run pre-commit
+      run: pre-commit run --all-files

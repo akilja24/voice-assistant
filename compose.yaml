@@ -1,0 +1,52 @@
+services:
+  orchestrator:
+    build: ./orchestrator
+    ports:
+      - "8000:8000"
+    environment:
+      - WHISPER_SERVICE_URL=http://whisper-service:8001
+      - TTS_SERVICE_URL=http://tts-service:8003
+      - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3}
+      - SHARED_SECRET=${SHARED_SECRET:-}
+    depends_on:
+      - whisper-service
+      - tts-service
+    networks:
+      - voice-assistant-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  whisper-service:
+    build: ./whisper-service
+    ports:
+      - "8001:8001"
+    environment:
+      - WHISPER_MODEL=${WHISPER_MODEL:-tiny.en}
+      - DEVICE=cuda
+      - COMPUTE_TYPE=float16
+      - SHARED_SECRET=${SHARED_SECRET:-}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - voice-assistant-network
+
+  tts-service:
+    build: ./tts-service
+    ports:
+      - "8003:8003"
+    environment:
+      - TTS_VOICE=${TTS_VOICE:-en_US-amy-medium}
+      - TTS_ENGINE=${TTS_ENGINE:-piper}
+      - SHARED_SECRET=${SHARED_SECRET:-}
+    networks:
+      - voice-assistant-network
+
+networks:
+  voice-assistant-network:
+    driver: bridge
