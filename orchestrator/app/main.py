@@ -93,18 +93,32 @@ async def process_audio_pipeline(audio_path: str, http_client: httpx.AsyncClient
         # Step 2: Generate response with Ollama
         logger.info("Generating LLM response...")
         try:
+            # Strong instruction for very short responses
+            system_prompt = "You are a voice assistant. You MUST respond in ONLY 1-2 short sentences. Maximum 30 words total. Be extremely concise and direct."
+            prompt = f"{system_prompt}\n\nUser: {transcription}\n\nAssistant (remember: 1-2 sentences, max 30 words):"
+            
             response = await http_client.post(
                 f"{OLLAMA_URL}/api/generate",
                 json={
                     "model": OLLAMA_MODEL, 
-                    "prompt": transcription, 
-                    "stream": False
+                    "prompt": prompt, 
+                    "stream": False,
+                    "options": {
+                        "num_predict": 50,  # Limit tokens to force short response
+                        "temperature": 0.7,
+                        "top_p": 0.9
+                    }
                 },
                 timeout=30.0
             )
             response.raise_for_status()
             llm_text = response.json()["response"]
-            logger.info(f"LLM response: {llm_text[:100]}...")
+            
+            # Truncate if still too long (backup measure)
+            if len(llm_text) > 150:
+                llm_text = llm_text[:150].rsplit('.', 1)[0] + '.'
+            
+            logger.info(f"LLM response ({len(llm_text)} chars): {llm_text}")
         except Exception as e:
             logger.warning(f"Ollama error (using fallback): {e}")
             # Fallback response if Ollama is not available
