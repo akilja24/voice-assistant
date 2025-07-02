@@ -1,0 +1,225 @@
+{
+  "timestamp": "2025-07-02 18:05:50",
+  "asr_results": [
+    {
+      "service": "Whisper",
+      "audio_file": "Clear-Short_16k.wav",
+      "runs": 3,
+      "avg_time": 0.31989701588948566,
+      "min_time": 0.31519412994384766,
+      "max_time": 0.325498104095459,
+      "std_dev": 0.005210378710287973,
+      "sample_result": {
+        "text": "I want to learn more about quantum computing. Can you explain to me the basics?",
+        "language": "en",
+        "duration": 8.96,
+        "processing_time": 0.31916117668151855,
+        "rtf": 0.03562066704034805,
+        "gpu_stats": {
+          "memory_used_mb": 1758,
+          "gpu_utilization": 0
+        }
+      }
+    },
+    {
+      "service": "NeMo ASR",
+      "audio_file": "Clear-Short_16k.wav",
+      "runs": 3,
+      "avg_time": 0.05539925893147787,
+      "min_time": 0.05312371253967285,
+      "max_time": 0.057390451431274414,
+      "std_dev": 0.0021475353417817374,
+      "sample_result": {
+        "text": "i want to learn more about quantum computing can you explain to me the basics",
+        "segments": [
+          {
+            "id": 0,
+            "start": 0.0,
+            "end": 8.96,
+            "text": "i want to learn more about quantum computing can you explain to me the basics",
+            "confidence": 1.0
+          }
+        ],
+        "language": "en",
+        "duration": 8.96,
+        "processing_time": 0.045259714126586914,
+        "rtf": 0.0050513073801994315,
+        "model": "stt_en_quartznet15x5"
+      }
+    },
+    {
+      "service": "Whisper",
+      "audio_file": "Clear-Medium_16k.wav",
+      "runs": 3,
+      "avg_time": 0.8806531429290771,
+      "min_time": 0.8645246028900146,
+      "max_time": 0.901425838470459,
+      "std_dev": 0.018883893456810092,
+      "sample_result": {
+        "text": "CRISPR is a gene editing tool that allows scientists to precisely modify DNA by cutting and inserting new genetic material at specific locations. It acts like a pair of molecular scissors, directed by a guide RNA, to target a particular DNA sequence. This technology, derived from a bacterial immune system, has revolutionized genetic research and is being explored for various applications, including treating diseases, improving agriculture, and studying fundamental biology.",
+        "language": "en",
+        "duration": 35.2,
+        "processing_time": 0.860830545425415,
+        "rtf": 0.024455413222312924,
+        "gpu_stats": {
+          "memory_used_mb": 1758,
+          "gpu_utilization": 46
+        }
+      }
+    },
+    {
+      "service": "NeMo ASR",
+      "audio_file": "Clear-Medium_16k.wav",
+      "runs": 3,
+      "avg_time": 0.08431657155354817,
+      "min_time": 0.08157610893249512,
+      "max_time": 0.08720755577087402,
+      "std_dev": 0.0028187392459360842,
+      "sample_result": {
+        "text": "crisper is a gene ending tool that allow scientists to precisely modify d na by cutting and inserting new genetic material at specific locations it acts like a pair of molecular scissors directed by a guide arna to target a particular dine sequence this technology derived from a bacterial immune system has revolutionalized genetic research and is being explored for various applications including treating diseases improving agriculture and studying fundamental biology",
+        "segments": [
+          {
+            "id": 0,
+            "start": 0.0,
+            "end": 35.2,
+            "text": "crisper is a gene ending tool that allow scientists to precisely modify d na by cutting and inserting new genetic material at specific locations it acts like a pair of molecular scissors directed by a guide arna to target a particular dine sequence this technology derived from a bacterial immune system has revolutionalized genetic research and is being explored for various applications including treating diseases improving agriculture and studying fundamental biology",
+            "confidence": 1.0
+          }
+        ],
+        "language": "en",
+        "duration": 35.2,
+        "processing_time": 0.056798696517944336,
+        "rtf": 0.0016135993328961458,
+        "model": "stt_en_quartznet15x5"
+      }
+    },
+    {
+      "service": "Whisper",
+      "audio_file": "Noisy-Short_16k.wav",
+      "runs": 3,
+      "avg_time": 0.5261023839314779,
+      "min_time": 0.520301342010498,
+      "max_time": 0.5314736366271973,
+      "std_dev": 0.005598533811114661,
+      "sample_result": {
+        "text": "Okay, so what is the weather today? I'm wondering what if I need to wear a jacket when I'm in Toronto, Ontario, or if I can go out with maybe a t-shirt.",
+        "language": "en",
+        "duration": 24.8106875,
+        "processing_time": 0.5091209411621094,
+        "rtf": 0.020520227065941216,
+        "gpu_stats": {
+          "memory_used_mb": 1790,
+          "gpu_utilization": 10
+        }
+      }
+    },
+    {
+      "service": "NeMo ASR",
+      "audio_file": "Noisy-Short_16k.wav",
+      "runs": 3,
+      "avg_time": 0.06710060437520345,
+      "min_time": 0.06555485725402832,
+      "max_time": 0.0694129467010498,
+      "std_dev": 0.002040089385584201,
+      "sample_result": {
+        "text": "okay so what is the weather today i'm wondering what if i need to wear a jacket when i'm in toronto ontario or if i can go out with maybe a tshirt",
+        "segments": [
+          {
+            "id": 0,
+            "start": 0.0,
+            "end": 24.8106875,
+            "text": "okay so what is the weather today i'm wondering what if i need to wear a jacket when i'm in toronto ontario or if i can go out with maybe a tshirt",
+            "confidence": 1.0
+          }
+        ],
+        "language": "en",
+        "duration": 24.8106875,
+        "processing_time": 0.049706459045410156,
+        "rtf": 0.0020034293304210193,
+        "model": "stt_en_quartznet15x5"
+      }
+    }
+  ],
+  "tts_results": [
+    {
+      "service": "Piper TTS",
+      "text_length": 51,
+      "runs": 3,
+      "avg_time": 0.8962608973185221,
+      "min_time": 0.8415980339050293,
+      "max_time": 1.004913330078125,
+      "std_dev": 0.09409636916300389,
+      "avg_audio_size_kb": 171.65625
+    },
+    {
+      "service": "NeMo TTS",
+      "text_length": 51,
+      "runs": 3,
+      "avg_time": 0.5613664786020914,
+      "min_time": 0.5044100284576416,
+      "max_time": 0.6326005458831787,
+      "std_dev": 0.0652770246930881,
+      "avg_audio_size_kb": 144.87630208333334
+    },
+    {
+      "service": "Piper TTS",
+      "text_length": 44,
+      "runs": 3,
+      "avg_time": 0.7830234368642172,
+      "min_time": 0.7733612060546875,
+      "max_time": 0.7938094139099121,
+      "std_dev": 0.010270316710067378,
+      "avg_audio_size_kb": 158.48958333333334
+    },
+    {
+      "service": "NeMo TTS",
+      "text_length": 44,
+      "runs": 3,
+      "avg_time": 0.47597964604695636,
+      "min_time": 0.4475383758544922,
+      "max_time": 0.4986870288848877,
+      "std_dev": 0.026051953378812134,
+      "avg_audio_size_kb": 129.37630208333334
+    },
+    {
+      "service": "Piper TTS",
+      "text_length": 79,
+      "runs": 3,
+      "avg_time": 1.0592255592346191,
+      "min_time": 0.9741144180297852,
+      "max_time": 1.2000749111175537,
+      "std_dev": 0.12286007165191676,
+      "avg_audio_size_kb": 249.93619791666666
+    },
+    {
+      "service": "NeMo TTS",
+      "text_length": 79,
+      "runs": 3,
+      "avg_time": 0.8721168041229248,
+      "min_time": 0.8444638252258301,
+      "max_time": 0.8967602252960205,
+      "std_dev": 0.026277774703081597,
+      "avg_audio_size_kb": 229.70963541666666
+    },
+    {
+      "service": "Piper TTS",
+      "text_length": 136,
+      "runs": 3,
+      "avg_time": 1.4119915962219238,
+      "min_time": 1.3951427936553955,
+      "max_time": 1.4342865943908691,
+      "std_dev": 0.02013218986870172,
+      "avg_audio_size_kb": 366.4895833333333
+    },
+    {
+      "service": "NeMo TTS",
+      "text_length": 136,
+      "runs": 3,
+      "avg_time": 1.2902260621388753,
+      "min_time": 1.256035327911377,
+      "max_time": 1.3186299800872803,
+      "std_dev": 0.03169602581147304,
+      "avg_audio_size_kb": 347.2096354166667
+    }
+  ]
+}

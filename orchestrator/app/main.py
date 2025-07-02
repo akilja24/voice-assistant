@@ -12,6 +12,7 @@ import tempfile
 import struct
 import wave
 from pathlib import Path
+import websockets
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -23,6 +24,15 @@ TTS_SERVICE_URL = os.getenv("TTS_SERVICE_URL", "http://tts-service:8003")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://host.docker.internal:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
 SHARED_SECRET = os.getenv("SHARED_SECRET", "")
+EOU_SERVICE_URL = os.getenv("EOU_SERVICE_URL", "http://eou-service:8004")
+
+# Backend selection
+ASR_BACKEND = os.getenv("ASR_BACKEND", "whisper")  # "whisper" or "nemo"
+TTS_BACKEND = os.getenv("TTS_BACKEND", "piper")    # "piper" or "nemo"
+
+# NeMo service URLs
+ASR_NEMO_SERVICE_URL = os.getenv("ASR_NEMO_SERVICE_URL", "http://asr-nemo-service:8005")
+TTS_NEMO_SERVICE_URL = os.getenv("TTS_NEMO_SERVICE_URL", "http://tts-nemo-service:8006")
 
 
 @asynccontextmanager
@@ -35,6 +45,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Voice Assistant Orchestrator", lifespan=lifespan)
+
+# Store active audio streaming tasks for interruption
+active_audio_streams: dict = {}
 
 
 async def save_pcm_to_wav(pcm_data: bytes, sample_rate: int = 16000, channels: int = 1, sample_width: int = 2) -> str:
@@ -62,7 +75,7 @@ async def process_audio_pipeline(audio_path: str, http_client: httpx.AsyncClient
     """
     try:
         # Step 1: Transcribe audio
-        logger.info("Transcribing audio...")
+        logger.info(f"Transcribing audio using {ASR_BACKEND} backend...")
         async with aiofiles.open(audio_path, 'rb') as f:
             audio_data = await f.read()
         
@@ -71,9 +84,12 @@ async def process_audio_pipeline(audio_path: str, http_client: httpx.AsyncClient
         if SHARED_SECRET:
             headers["Authorization"] = f"Bearer {SHARED_SECRET}"
         
+        # Select ASR service URL based on backend
+        asr_url = ASR_NEMO_SERVICE_URL if ASR_BACKEND == "nemo" else WHISPER_SERVICE_URL
+        
         try:
             response = await http_client.post(
-                f"{WHISPER_SERVICE_URL}/transcribe",
+                f"{asr_url}/transcribe",
                 files=files,
                 headers=headers,
                 timeout=60.0  # 60 second timeout for transcription
@@ -81,21 +97,21 @@ async def process_audio_pipeline(audio_path: str, http_client: httpx.AsyncClient
             response.raise_for_status()
             result = response.json()
             transcription = result["text"]
-            logger.info(f"Transcription: {transcription[:100]}...")
+            logger.info(f"Transcription ({ASR_BACKEND}): {transcription[:100]}...")
             
         except httpx.TimeoutException:
-            logger.error("Whisper service timeout")
+            logger.error(f"{ASR_BACKEND} service timeout")
             transcription = "Sorry, the transcription service timed out."
         except httpx.HTTPError as e:
-            logger.error(f"Whisper service error: {e}")
+            logger.error(f"{ASR_BACKEND} service error: {e}")
             transcription = "Sorry, I couldn't transcribe the audio."
         
         # Step 2: Generate response with Ollama
         logger.info("Generating LLM response...")
         try:
-            # Strong instruction for very short responses
-            system_prompt = "You are a voice assistant. You MUST respond in ONLY 1-2 short sentences. Maximum 30 words total. Be extremely concise and direct."
-            prompt = f"{system_prompt}\n\nUser: {transcription}\n\nAssistant (remember: 1-2 sentences, max 30 words):"
+            # Natural conversational prompt without strict limits
+            system_prompt = "You are a helpful voice assistant. Provide clear, concise responses that are natural for spoken conversation."
+            prompt = f"{system_prompt}\n\nUser: {transcription}\n\nAssistant:"
             
             response = await http_client.post(
                 f"{OLLAMA_URL}/api/generate",
@@ -104,7 +120,7 @@ async def process_audio_pipeline(audio_path: str, http_client: httpx.AsyncClient
                     "prompt": prompt, 
                     "stream": False,
                     "options": {
-                        "num_predict": 50,  # Limit tokens to force short response
+                        "num_predict": 300,  # Allow reasonable response length
                         "temperature": 0.7,
                         "top_p": 0.9
                     }
@@ -114,10 +130,6 @@ async def process_audio_pipeline(audio_path: str, http_client: httpx.AsyncClient
             response.raise_for_status()
             llm_text = response.json()["response"]
             
-            # Truncate if still too long (backup measure)
-            if len(llm_text) > 150:
-                llm_text = llm_text[:150].rsplit('.', 1)[0] + '.'
-            
             logger.info(f"LLM response ({len(llm_text)} chars): {llm_text}")
         except Exception as e:
             logger.warning(f"Ollama error (using fallback): {e}")
@@ -125,17 +137,21 @@ async def process_audio_pipeline(audio_path: str, http_client: httpx.AsyncClient
             llm_text = f"I heard you say: '{transcription}'. I'm here to help you with any questions or tasks you might have."
         
         # Step 3: Convert to speech
-        logger.info("Converting to speech...")
+        logger.info(f"Converting to speech using {TTS_BACKEND} backend...")
+        
+        # Select TTS service URL based on backend
+        tts_url = TTS_NEMO_SERVICE_URL if TTS_BACKEND == "nemo" else TTS_SERVICE_URL
+        
         try:
             response = await http_client.post(
-                f"{TTS_SERVICE_URL}/speak",
+                f"{tts_url}/speak",
                 json={"text": llm_text},
                 headers=headers if SHARED_SECRET else {},
                 timeout=30.0
             )
             response.raise_for_status()
             audio_bytes = response.content
-            logger.info(f"TTS generated {len(audio_bytes)} bytes of audio")
+            logger.info(f"TTS ({TTS_BACKEND}) generated {len(audio_bytes)} bytes of audio")
         except Exception as e:
             logger.error(f"TTS service error: {e}")
             # Generate error beep as fallback
@@ -171,7 +187,25 @@ async def process_audio_pipeline(audio_path: str, http_client: httpx.AsyncClient
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    return {"status": "healthy"}
+    return {
+        "status": "healthy",
+        "backends": {
+            "asr": ASR_BACKEND,
+            "tts": TTS_BACKEND
+        },
+        "services": {
+            "asr": {
+                "whisper": WHISPER_SERVICE_URL,
+                "nemo": ASR_NEMO_SERVICE_URL
+            },
+            "tts": {
+                "piper": TTS_SERVICE_URL,
+                "nemo": TTS_NEMO_SERVICE_URL
+            },
+            "llm": OLLAMA_URL,
+            "eou": EOU_SERVICE_URL
+        }
+    }
 
 
 @app.websocket("/ws/interact")
@@ -232,17 +266,36 @@ async def websocket_interact(websocket: WebSocket):
                                 }
                             })
                             
-                            # Stream audio in chunks (4KB chunks)
-                            chunk_size = 4096
-                            for i in range(0, len(response_audio), chunk_size):
-                                chunk = response_audio[i:i + chunk_size]
-                                await websocket.send_bytes(chunk)
-                                await asyncio.sleep(0.01)  # Small delay to prevent overwhelming
+                            # Create interruptible audio streaming task
+                            async def stream_audio():
+                                try:
+                                    # Stream audio in chunks (4KB chunks)
+                                    chunk_size = 4096
+                                    for i in range(0, len(response_audio), chunk_size):
+                                        chunk = response_audio[i:i + chunk_size]
+                                        await websocket.send_bytes(chunk)
+                                        await asyncio.sleep(0.01)  # Small delay to prevent overwhelming
+                                    
+                                    # Send completion message
+                                    await websocket.send_json({
+                                        "type": "audio_complete"
+                                    })
+                                except asyncio.CancelledError:
+                                    logger.info(f"Audio streaming cancelled for {stream_id}")
+                                    raise
                             
-                            # Send completion message
-                            await websocket.send_json({
-                                "type": "audio_complete"
-                            })
+                            # Start streaming task and track it
+                            current_stream_task = asyncio.create_task(stream_audio())
+                            active_audio_streams[stream_id] = current_stream_task
+                            
+                            try:
+                                await current_stream_task
+                            except asyncio.CancelledError:
+                                pass
+                            finally:
+                                # Clean up
+                                if stream_id in active_audio_streams:
+                                    del active_audio_streams[stream_id]
                             
                             logger.info("Audio response sent successfully")
                             
@@ -275,6 +328,11 @@ async def websocket_interact(websocket: WebSocket):
                 })
             except:
                 pass
+    finally:
+        # Clean up any active streams
+        if stream_id in active_audio_streams:
+            active_audio_streams[stream_id].cancel()
+            del active_audio_streams[stream_id]
 
 
 @app.websocket("/ws")
@@ -286,6 +344,8 @@ async def websocket_endpoint(websocket: WebSocket):
     logger.info(f"WebSocket connection established on /ws from {websocket.client}")
     
     audio_chunks: List[bytes] = []
+    stream_id = id(websocket)
+    current_stream_task = None
     
     try:
         while True:
@@ -295,6 +355,16 @@ async def websocket_endpoint(websocket: WebSocket):
             if "bytes" in message:
                 # Binary audio chunk received
                 audio_chunk = message["bytes"]
+                
+                # Cancel any active audio streaming for this connection
+                if stream_id in active_audio_streams and active_audio_streams[stream_id]:
+                    logger.info(f"Interrupting active audio stream for {stream_id}")
+                    active_audio_streams[stream_id].cancel()
+                    await websocket.send_json({
+                        "type": "playback_interrupted",
+                        "message": "Previous response interrupted"
+                    })
+                
                 audio_chunks.append(audio_chunk)
                 logger.info(f"Received audio chunk: {len(audio_chunk)} bytes (total chunks: {len(audio_chunks)})")
                 
@@ -336,17 +406,36 @@ async def websocket_endpoint(websocket: WebSocket):
                                 }
                             })
                             
-                            # Stream audio in chunks (4KB chunks)
-                            chunk_size = 4096
-                            for i in range(0, len(response_audio), chunk_size):
-                                chunk = response_audio[i:i + chunk_size]
-                                await websocket.send_bytes(chunk)
-                                await asyncio.sleep(0.01)  # Small delay to prevent overwhelming
+                            # Create interruptible audio streaming task
+                            async def stream_audio():
+                                try:
+                                    # Stream audio in chunks (4KB chunks)
+                                    chunk_size = 4096
+                                    for i in range(0, len(response_audio), chunk_size):
+                                        chunk = response_audio[i:i + chunk_size]
+                                        await websocket.send_bytes(chunk)
+                                        await asyncio.sleep(0.01)  # Small delay to prevent overwhelming
+                                    
+                                    # Send completion message
+                                    await websocket.send_json({
+                                        "type": "audio_complete"
+                                    })
+                                except asyncio.CancelledError:
+                                    logger.info(f"Audio streaming cancelled for {stream_id}")
+                                    raise
                             
-                            # Send completion message
-                            await websocket.send_json({
-                                "type": "audio_complete"
-                            })
+                            # Start streaming task and track it
+                            current_stream_task = asyncio.create_task(stream_audio())
+                            active_audio_streams[stream_id] = current_stream_task
+                            
+                            try:
+                                await current_stream_task
+                            except asyncio.CancelledError:
+                                pass
+                            finally:
+                                # Clean up
+                                if stream_id in active_audio_streams:
+                                    del active_audio_streams[stream_id]
                             
                             logger.info("Audio response sent successfully")
                             
@@ -379,6 +468,187 @@ async def websocket_endpoint(websocket: WebSocket):
                     "message": str(e)
                 })
             except:
+                pass
+    finally:
+        # Clean up any active streams
+        if stream_id in active_audio_streams:
+            active_audio_streams[stream_id].cancel()
+            del active_audio_streams[stream_id]
+
+
+@app.websocket("/ws/auto")
+async def websocket_auto_endpoint(websocket: WebSocket):
+    """
+    WebSocket endpoint with automatic end-of-utterance detection
+    """
+    await websocket.accept()
+    logger.info(f"WebSocket auto-detection connection established from {websocket.client}")
+    
+    audio_chunks: List[bytes] = []
+    eou_websocket = None
+    stream_id = f"stream_{id(websocket)}"
+    processing_lock = asyncio.Lock()
+    is_processing = False
+    stream_ws_id = id(websocket)
+    
+    try:
+        # Connect to EOU service
+        import websockets
+        eou_ws_url = f"{EOU_SERVICE_URL.replace('http://', 'ws://')}/ws/stream/{stream_id}"
+        eou_websocket = await websockets.connect(eou_ws_url)
+        logger.info(f"Connected to EOU service for stream {stream_id}")
+        
+        # Create task to handle EOU responses
+        async def handle_eou_responses():
+            nonlocal is_processing
+            try:
+                async for message in eou_websocket:
+                    data = json.loads(message)
+                    logger.info(f"EOU response: {data}")
+                    
+                    if data.get("type") == "eou_status" and data.get("is_end_of_utterance"):
+                        async with processing_lock:
+                            if not is_processing and audio_chunks:
+                                is_processing = True
+                                logger.info("End of utterance detected, processing audio...")
+                                
+                                # Send transcription update to client
+                                await websocket.send_json({
+                                    "type": "eou_detected",
+                                    "probability": data.get("probability", 0),
+                                    "punctuated_text": data.get("punctuated_text", ""),
+                                    "reason": data.get("reason", "")
+                                })
+                                
+                                # Process accumulated audio
+                                pcm_data = b''.join(audio_chunks)
+                                wav_path = await save_pcm_to_wav(pcm_data)
+                                
+                                try:
+                                    # Process through pipeline
+                                    response_audio = await process_audio_pipeline(wav_path, app.state.http_client)
+                                    
+                                    # Send response to client
+                                    await websocket.send_json({
+                                        "type": "metadata",
+                                        "audio_info": {
+                                            "format": "wav",
+                                            "sample_rate": 22050,
+                                            "bitrate": 128
+                                        }
+                                    })
+                                    
+                                    # Create interruptible audio streaming task
+                                    async def stream_audio():
+                                        try:
+                                            # Stream audio response
+                                            chunk_size = 4096
+                                            for i in range(0, len(response_audio), chunk_size):
+                                                chunk = response_audio[i:i + chunk_size]
+                                                await websocket.send_bytes(chunk)
+                                                await asyncio.sleep(0.01)
+                                            
+                                            await websocket.send_json({"type": "audio_complete"})
+                                        except asyncio.CancelledError:
+                                            logger.info(f"Audio streaming cancelled for {stream_ws_id}")
+                                            raise
+                                    
+                                    # Start streaming task and track it
+                                    stream_task = asyncio.create_task(stream_audio())
+                                    active_audio_streams[stream_ws_id] = stream_task
+                                    
+                                    try:
+                                        await stream_task
+                                    except asyncio.CancelledError:
+                                        pass
+                                    finally:
+                                        # Clean up
+                                        if stream_ws_id in active_audio_streams:
+                                            del active_audio_streams[stream_ws_id]
+                                    
+                                    # Clear audio chunks for next utterance
+                                    audio_chunks.clear()
+                                    
+                                    # Reset EOU stream state
+                                    await eou_websocket.send(json.dumps({"type": "reset"}))
+                                    
+                                finally:
+                                    if os.path.exists(wav_path):
+                                        os.unlink(wav_path)
+                                    is_processing = False
+                                    
+            except Exception as e:
+                logger.error(f"Error handling EOU responses: {e}")
+        
+        # Start EOU response handler
+        eou_task = asyncio.create_task(handle_eou_responses())
+        
+        # Handle incoming audio
+        while True:
+            message = await websocket.receive()
+            
+            if "bytes" in message:
+                # Audio chunk received
+                audio_chunk = message["bytes"]
+                
+                # Cancel any active audio streaming for this connection
+                if stream_ws_id in active_audio_streams and active_audio_streams[stream_ws_id]:
+                    logger.info(f"Interrupting active audio stream for {stream_ws_id}")
+                    active_audio_streams[stream_ws_id].cancel()
+                    await websocket.send_json({
+                        "type": "playback_interrupted",
+                        "message": "Previous response interrupted"
+                    })
+                
+                audio_chunks.append(audio_chunk)
+                
+                # Forward to EOU service
+                await eou_websocket.send(audio_chunk)
+                
+                logger.debug(f"Received and forwarded audio chunk: {len(audio_chunk)} bytes")
+                
+            elif "text" in message:
+                # Control message
+                try:
+                    control_msg = json.loads(message["text"])
+                    
+                    if control_msg.get("type") == "stop_stream":
+                        logger.info("Stop stream requested")
+                        break
+                        
+                except json.JSONDecodeError:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "Invalid JSON control message"
+                    })
+                    
+    except WebSocketDisconnect:
+        logger.info("WebSocket disconnected")
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}")
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "message": str(e)
+            })
+        except:
+            pass
+    finally:
+        # Clean up any active streams
+        if stream_ws_id in active_audio_streams:
+            active_audio_streams[stream_ws_id].cancel()
+            del active_audio_streams[stream_ws_id]
+        
+        # Clean up EOU connection
+        if eou_websocket:
+            await eou_websocket.close()
+        
+        # Cancel EOU task if running
+        if 'eou_task' in locals():
+            eou_task.cancel()
+            try:
+                await eou_task
+            except asyncio.CancelledError:
                 pass
 
 

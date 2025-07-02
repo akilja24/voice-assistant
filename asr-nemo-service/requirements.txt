@@ -1,0 +1,36 @@
+# Critical: Install in this order
+# Cython is installed in Dockerfile first
+numpy>=1.22,<2.0
+
+# NeMo ASR (will pull in torch if needed)
+nemo_toolkit[asr]==1.22.0
+
+# ASR-specific requirements from NeMo v1.22.0
+braceexpand
+editdistance
+g2p_en
+jiwer
+kaldi-python-io
+kaldiio
+librosa>=0.10.0
+marshmallow
+matplotlib
+packaging
+pyannote.core
+pyannote.metrics
+pydub
+resampy
+ruamel.yaml
+scipy>=0.14
+soundfile
+sox
+texterrors
+
+# FastAPI web framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+
+# Utilities
+aiofiles==23.2.1
+httpx==0.25.2

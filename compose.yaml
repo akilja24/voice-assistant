@@ -6,12 +6,20 @@ services:
     environment:
       - WHISPER_SERVICE_URL=http://whisper-service:8001
       - TTS_SERVICE_URL=http://tts-service:8003
+      - EOU_SERVICE_URL=http://eou-service:8004
       - OLLAMA_URL=${OLLAMA_URL:-http://host.docker.internal:11434}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3}
       - SHARED_SECRET=${SHARED_SECRET:-}
+      # Backend selection
+      - ASR_BACKEND=${ASR_BACKEND:-whisper}
+      - TTS_BACKEND=${TTS_BACKEND:-piper}
+      # NeMo service URLs
+      - ASR_NEMO_SERVICE_URL=http://asr-nemo-service:8005
+      - TTS_NEMO_SERVICE_URL=http://tts-nemo-service:8006
     depends_on:
       - whisper-service
       - tts-service
+      - eou-service
     networks:
       - voice-assistant-network
     extra_hosts:
@@ -56,10 +64,87 @@ services:
     networks:
       - voice-assistant-network
 
+  eou-service:
+    build: ./eou-service
+    ports:
+      - "8004:8004"
+    environment:
+      - VAD_MODEL=${VAD_MODEL:-silero_vad}
+      - VAD_SILENCE_THRESHOLD_MS=${VAD_SILENCE_THRESHOLD_MS:-400}
+      - SEMANTIC_MODEL=${SEMANTIC_MODEL:-pipecat_smart_turn}
+      - PUNCTUATION_MODEL=${PUNCTUATION_MODEL:-deepmultilingualpunctuation}
+      - EOU_PROBABILITY_THRESHOLD=${EOU_PROBABILITY_THRESHOLD:-0.7}
+      - MAX_SILENCE_TIMEOUT_MS=${MAX_SILENCE_TIMEOUT_MS:-2000}
+      - SAMPLE_RATE=${SAMPLE_RATE:-16000}
+      - SHARED_SECRET=${SHARED_SECRET:-}
+    networks:
+      - voice-assistant-network
+
+  asr-nemo-service:
+    build: ./asr-nemo-service
+    ports:
+      - "8005:8005"
+    environment:
+      - NEMO_MODEL=${NEMO_MODEL:-stt_en_quartznet15x5}
+      - DEVICE=cuda
+      - MODEL_CACHE_DIR=/app/models
+      - SHARED_SECRET=${SHARED_SECRET:-}
+      - SAMPLE_RATE=${SAMPLE_RATE:-16000}
+      - BATCH_SIZE=${BATCH_SIZE:-1}
+      - TORCH_HOME=/app/models/torch
+      - HF_HOME=/app/models/huggingface
+    volumes:
+      - nemo-asr-models:/app/models
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+          memory: 4G
+    networks:
+      - voice-assistant-network
+
+  tts-nemo-service:
+    build: ./tts-nemo-service
+    ports:
+      - "8006:8006"
+    environment:
+      - TACOTRON_MODEL=${TACOTRON_MODEL:-tts_en_tacotron2}
+      - VOCODER_MODEL=${VOCODER_MODEL:-tts_en_hifigan}
+      - DEVICE=cuda
+      - MODEL_CACHE_DIR=/app/models
+      - SHARED_SECRET=${SHARED_SECRET:-}
+      - SAMPLE_RATE=${TTS_SAMPLE_RATE:-22050}
+      - DEFAULT_SPEAKER=${DEFAULT_SPEAKER:-0}
+      - TORCH_HOME=/app/models/torch
+      - HF_HOME=/app/models/huggingface
+    volumes:
+      - nemo-tts-models:/app/models
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+          memory: 4G
+    networks:
+      - voice-assistant-network
+
 networks:
   voice-assistant-network:
     driver: bridge
 
 volumes:
   whisper-models:
+    driver: local
+  nemo-asr-models:
+    driver: local
+  nemo-tts-models:
     driver: local

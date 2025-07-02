@@ -1,0 +1,31 @@
+# Critical: Install in this order
+# Cython is installed in Dockerfile first
+numpy>=1.22,<2.0
+
+# NeMo TTS
+nemo_toolkit[tts]==1.22.0
+
+# TTS-specific requirements from NeMo v1.22.0
+attrdict
+einops
+jieba
+kornia
+librosa
+matplotlib
+nltk
+pandas
+pypinyin
+pypinyin-dict
+
+# FastAPI web framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+
+# Audio processing
+scipy>=0.14
+soundfile
+
+# Utilities
+aiofiles==23.2.1
+httpx==0.25.2
